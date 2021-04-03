@@ -182,11 +182,17 @@ class BertEmbeddings(nn.Module):
         self.position_embedding_type = getattr(config, "position_embedding_type", "absolute")
 
     def forward(
-        self, input_ids=None, token_type_ids=None, position_ids=None, inputs_embeds=None, past_key_values_length=0
+            self,
+            input_ids:Optional[torch.Tensor] = None,
+            token_type_ids:Optional[torch.Tensor] = None,
+            position_ids:Optional[torch.Tensor] = None,
+            inputs_embeds:Optional[torch.Tensor] = None,
+            past_key_values_length : int=0
     ):
         if input_ids is not None:
             input_shape = input_ids.size()
         else:
+            assert inputs_embeds is not None
             input_shape = inputs_embeds.size()[:-1]
 
         seq_length = input_shape[1]
@@ -198,6 +204,7 @@ class BertEmbeddings(nn.Module):
             token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=self.position_ids.device)
 
         if inputs_embeds is None:
+            assert input_ids is not None
             inputs_embeds = self.word_embeddings(input_ids)
         token_type_embeddings = self.token_type_embeddings(token_type_ids)
 
@@ -234,21 +241,22 @@ class BertSelfAttention(nn.Module):
             self.distance_embedding = nn.Embedding(2 * config.max_position_embeddings - 1, self.attention_head_size)
 
         self.is_decoder = config.is_decoder
+        self.softmax = nn.Softmax(dim=-1)
 
     def transpose_for_scores(self, x):
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
-        x = x.view(*new_x_shape)
+        x = x.view(new_x_shape)
         return x.permute(0, 2, 1, 3)
 
     def forward(
         self,
         hidden_states,
-        attention_mask=None,
-        head_mask=None,
-        encoder_hidden_states=None,
-        encoder_attention_mask=None,
-        past_key_value=None,
-        output_attentions=False,
+        attention_mask : Optional[torch.Tensor]=None,
+        head_mask : Optional[torch.Tensor]=None,
+        encoder_hidden_states : Optional[torch.Tensor]=None,
+        encoder_attention_mask : Optional[torch.Tensor]=None,
+        past_key_value : Optional[Tuple[torch.Tensor, torch.Tensor]]=None,
+        output_attentions : bool=False,
     ):
         mixed_query_layer = self.query(hidden_states)
 
@@ -312,7 +320,7 @@ class BertSelfAttention(nn.Module):
             attention_scores = attention_scores + attention_mask
 
         # Normalize the attention scores to probabilities.
-        attention_probs = nn.Softmax(dim=-1)(attention_scores)
+        attention_probs = self.softmax(attention_scores)
 
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
@@ -326,7 +334,7 @@ class BertSelfAttention(nn.Module):
 
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
-        context_layer = context_layer.view(*new_context_layer_shape)
+        context_layer = context_layer.view(new_context_layer_shape)
 
         outputs = (context_layer, attention_probs) if output_attentions else (context_layer,)
 
@@ -377,12 +385,12 @@ class BertAttention(nn.Module):
     def forward(
         self,
         hidden_states,
-        attention_mask=None,
-        head_mask=None,
-        encoder_hidden_states=None,
-        encoder_attention_mask=None,
-        past_key_value=None,
-        output_attentions=False,
+        attention_mask : Optional[torch.Tensor]=None,
+        head_mask : Optional[torch.Tensor]=None,
+        encoder_hidden_states : Optional[torch.Tensor]=None,
+        encoder_attention_mask : Optional[torch.Tensor]=None,
+        past_key_value : Optional[Tuple[torch.Tensor, torch.Tensor]]=None,
+        output_attentions : bool = False,
     ):
         self_outputs = self.self(
             hidden_states,
@@ -444,12 +452,12 @@ class BertLayer(nn.Module):
     def forward(
         self,
         hidden_states,
-        attention_mask=None,
-        head_mask=None,
-        encoder_hidden_states=None,
-        encoder_attention_mask=None,
-        past_key_value=None,
-        output_attentions=False,
+        attention_mask : Optional[torch.Tensor]=None,
+        head_mask : Optional[torch.Tensor]=None,
+        encoder_hidden_states : Optional[torch.Tensor]=None,
+        encoder_attention_mask : Optional[torch.Tensor]=None,
+        past_key_value : Optional[Tuple[torch.Tensor, torch.Tensor]]=None,
+        output_attentions : bool =False,
     ):
         # decoder uni-directional self-attention cached key/values tuple is at positions 1,2
         self_attn_past_key_value = past_key_value[:2] if past_key_value is not None else None
@@ -515,23 +523,24 @@ class BertEncoder(nn.Module):
         super().__init__()
         self.config = config
         self.layer = nn.ModuleList([BertLayer(config) for _ in range(config.num_hidden_layers)])
+        self.add_cross_attention = self.config.add_cross_attention
 
     def forward(
         self,
         hidden_states,
-        attention_mask=None,
-        head_mask=None,
-        encoder_hidden_states=None,
-        encoder_attention_mask=None,
-        past_key_values=None,
-        use_cache=None,
+        attention_mask : Optional[torch.Tensor] = None,
+        head_mask : Optional[torch.Tensor] = None,
+        encoder_hidden_states : Optional[torch.Tensor] = None,
+        encoder_attention_mask : Optional[torch.Tensor] = None,
+        past_key_values : Optional[torch.Tensor] = None,
+        use_cache=False,
         output_attentions=False,
         output_hidden_states=False,
         return_dict=True,
     ):
         all_hidden_states = () if output_hidden_states else None
         all_self_attentions = () if output_attentions else None
-        all_cross_attentions = () if output_attentions and self.config.add_cross_attention else None
+        all_cross_attentions = () if output_attentions and self.add_cross_attention else None
 
         next_decoder_cache = () if use_cache else None
         for i, layer_module in enumerate(self.layer):
@@ -587,17 +596,17 @@ class BertEncoder(nn.Module):
             all_hidden_states = all_hidden_states + (hidden_states,)
 
         if not return_dict:
-            return tuple(
-                v
-                for v in [
-                    hidden_states,
-                    next_decoder_cache,
-                    all_hidden_states,
-                    all_self_attentions,
-                    all_cross_attentions,
-                ]
-                if v is not None
-            )
+            t = ()
+            for v in [
+                hidden_states,
+                next_decoder_cache,
+                all_hidden_states,
+                all_self_attentions,
+                all_cross_attentions,
+                ]:
+                if v is not None:
+                    t = t,v
+            return t
         return BaseModelOutputWithPastAndCrossAttentions(
             last_hidden_state=hidden_states,
             past_key_values=next_decoder_cache,
@@ -873,19 +882,19 @@ class BertModel(BertPreTrainedModel):
     )
     def forward(
         self,
-        input_ids=None,
-        attention_mask=None,
-        token_type_ids=None,
-        position_ids=None,
-        head_mask=None,
-        inputs_embeds=None,
-        encoder_hidden_states=None,
-        encoder_attention_mask=None,
+        input_ids : Optional[torch.Tensor]=None,
+        attention_mask : Optional[torch.Tensor]=None,
+        token_type_ids : Optional[torch.Tensor]=None,
+        position_ids : Optional[torch.Tensor]=None,
+        head_mask : Optional[torch.Tensor]=None,
+        inputs_embeds : Optional[torch.Tensor]=None,
+        encoder_hidden_states : Optional[torch.Tensor]=None,
+        encoder_attention_mask : Optional[torch.Tensor]=None,
         past_key_values=None,
-        use_cache=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        return_dict=None,
+        use_cache : Optional[bool]=None,
+        output_attentions : Optional[bool]=None,
+        output_hidden_states : Optional[bool]=None,
+        return_dict : Optional[bool]=None,
     ):
         r"""
         encoder_hidden_states  (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, sequence_length, hidden_size)`, `optional`):
@@ -1748,17 +1757,17 @@ class BertForQuestionAnswering(BertPreTrainedModel):
     )
     def forward(
         self,
-        input_ids=None,
-        attention_mask=None,
-        token_type_ids=None,
-        position_ids=None,
-        head_mask=None,
-        inputs_embeds=None,
-        start_positions=None,
-        end_positions=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        return_dict=None,
+        input_ids : Optional[torch.Tensor]=None,
+        attention_mask : Optional[torch.Tensor]=None,
+        token_type_ids : Optional[torch.Tensor]=None,
+        position_ids : Optional[torch.Tensor]=None,
+        head_mask : Optional[torch.Tensor]=None,
+        inputs_embeds : Optional[torch.Tensor]=None,
+        start_positions : Optional[torch.Tensor]=None,
+        end_positions : Optional[torch.Tensor]=None,
+        output_attentions : Optional[bool]=None,
+        output_hidden_states : Optional[bool]=None,
+        return_dict : Optional[bool]=None,
     ):
         r"""
         start_positions (:obj:`torch.LongTensor` of shape :obj:`(batch_size,)`, `optional`):
