@@ -304,7 +304,7 @@ class BertSelfAttention(nn.Module):
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
         context_layer = context_layer.view(new_context_layer_shape)
 
-        outputs = (context_layer, attention_probs) if output_attentions else (context_layer,)
+        outputs = (context_layer,)
 
         return outputs
 
@@ -474,8 +474,8 @@ class BertEncoder(nn.Module):
         return_dict=True,
     ):
         all_hidden_states = () if output_hidden_states else None
-        all_self_attentions = () if output_attentions else None
-        all_cross_attentions = () if output_attentions and self.add_cross_attention else None
+        all_self_attentions =  None
+        all_cross_attentions = None
 
         next_decoder_cache = () if use_cache else None
         for i, layer_module in enumerate(self.layer):
@@ -498,10 +498,6 @@ class BertEncoder(nn.Module):
             hidden_states = layer_outputs[0]
             if use_cache:
                 next_decoder_cache += (layer_outputs[-1],)
-            if output_attentions:
-                all_self_attentions = all_self_attentions + (layer_outputs[1],)
-                if self.config.add_cross_attention:
-                    all_cross_attentions = all_cross_attentions + (layer_outputs[2],)
 
         if output_hidden_states:
             all_hidden_states = all_hidden_states + (hidden_states,)
