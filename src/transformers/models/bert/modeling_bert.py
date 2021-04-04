@@ -368,7 +368,8 @@ class BertAttention(nn.Module):
             output_attentions,
         )
         attention_output = self.output(self_outputs[0], hidden_states)
-        outputs = (attention_output,) + self_outputs[1:]  # add attentions if we output them
+        assert(self_outputs[1:] is ())
+        outputs = (attention_output,) # + self_outputs[1:] add attentions if we output them
         return outputs
 
 
@@ -458,7 +459,6 @@ class BertEncoder(nn.Module):
         super().__init__()
         self.config = config
         self.layer = nn.ModuleList([BertLayer(config) for _ in range(config.num_hidden_layers)])
-        self.add_cross_attention = self.config.add_cross_attention
 
     def forward(
         self,
