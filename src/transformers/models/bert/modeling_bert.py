@@ -473,15 +473,12 @@ class BertEncoder(nn.Module):
         output_hidden_states=False,
         return_dict=True,
     ):
-        all_hidden_states = () if output_hidden_states else None
+        all_hidden_states = None
         all_self_attentions =  None
         all_cross_attentions = None
 
         next_decoder_cache = () if use_cache else None
         for i, layer_module in enumerate(self.layer):
-            if output_hidden_states:
-                all_hidden_states = all_hidden_states + (hidden_states,)
-
             layer_head_mask = head_mask[i] if head_mask is not None else None
             past_key_value = past_key_values[i] if past_key_values is not None else None
 
@@ -498,9 +495,6 @@ class BertEncoder(nn.Module):
             hidden_states = layer_outputs[0]
             if use_cache:
                 next_decoder_cache += (layer_outputs[-1],)
-
-        if output_hidden_states:
-            all_hidden_states = all_hidden_states + (hidden_states,)
 
         if not return_dict:
             t = ()
