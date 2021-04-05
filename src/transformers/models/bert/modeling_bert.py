@@ -249,7 +249,7 @@ class BertSelfAttention(nn.Module):
         encoder_hidden_states : Optional[torch.Tensor]=None,
         encoder_attention_mask : Optional[torch.Tensor]=None,
         past_key_value : Optional[Tuple[torch.Tensor, torch.Tensor]]=None,
-        output_attentions : bool=False,
+        output_attentions : bool = False,
     ):
         mixed_query_layer = self.query(hidden_states)
 
@@ -356,7 +356,7 @@ class BertAttention(nn.Module):
         encoder_hidden_states : Optional[torch.Tensor]=None,
         encoder_attention_mask : Optional[torch.Tensor]=None,
         past_key_value : Optional[Tuple[torch.Tensor, torch.Tensor]]=None,
-        output_attentions : bool = False,
+        output_attentions:bool=False,
     ):
         self_outputs = self.self(
             hidden_states,
@@ -423,8 +423,8 @@ class BertLayer(nn.Module):
         head_mask : Optional[torch.Tensor]=None,
         encoder_hidden_states : Optional[torch.Tensor]=None,
         encoder_attention_mask : Optional[torch.Tensor]=None,
-        past_key_value : Optional[Tuple[torch.Tensor, torch.Tensor]]=None,
-        output_attentions : bool =False,
+        past_key_value : Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]]=None,
+        output_attentions:bool=False,
     ):
         # decoder uni-directional self-attention cached key/values tuple is at positions 1,2
         self_attn_past_key_value = past_key_value[:2] if past_key_value is not None else None
@@ -437,14 +437,15 @@ class BertLayer(nn.Module):
         )
         attention_output = self_attention_outputs[0]
 
-        outputs = self_attention_outputs[1:]  # add self attentions if we output attention weights
+        # outputs = self_attention_outputs[1:]  add self attentions if we output attention weights
 
         cross_attn_present_key_value = None
 
-        layer_output = apply_chunking_to_forward(
-            self.feed_forward_chunk, self.chunk_size_feed_forward, self.seq_len_dim, attention_output
-        )
-        outputs = (layer_output,) + outputs
+        # layer_output = apply_chunking_to_forward(
+        #     self.feed_forward_chunk, self.chunk_size_feed_forward, self.seq_len_dim, attention_output
+        # )
+        layer_output = self.feed_forward_chunk(attention_output)
+        outputs = (layer_output,) # + outputs
 
         return outputs
 
@@ -467,9 +468,9 @@ class BertEncoder(nn.Module):
         head_mask : Optional[torch.Tensor] = None,
         encoder_hidden_states : Optional[torch.Tensor] = None,
         encoder_attention_mask : Optional[torch.Tensor] = None,
-        past_key_values : Optional[torch.Tensor] = None,
+        past_key_values : Optional[Tuple[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]]] = None,
         use_cache=False,
-        output_attentions=False,
+        output_attentions:bool=False,
         output_hidden_states=False,
         return_dict=True,
     ):
@@ -930,7 +931,7 @@ class BertForPreTraining(BertPreTrainedModel):
         inputs_embeds=None,
         labels=None,
         next_sentence_label=None,
-        output_attentions=None,
+        output_attentions : Optional[bool]=None,
         output_hidden_states=None,
         return_dict=None,
     ):
@@ -1041,7 +1042,7 @@ class BertLMHeadModel(BertPreTrainedModel):
         labels=None,
         past_key_values=None,
         use_cache=None,
-        output_attentions=None,
+        output_attentions : Optional[bool]=None,
         output_hidden_states=None,
         return_dict=None,
     ):
@@ -1193,7 +1194,7 @@ class BertForMaskedLM(BertPreTrainedModel):
         encoder_hidden_states=None,
         encoder_attention_mask=None,
         labels=None,
-        output_attentions=None,
+        output_attentions:Optional[bool]=None,
         output_hidden_states=None,
         return_dict=None,
     ):
@@ -1278,7 +1279,7 @@ class BertForNextSentencePrediction(BertPreTrainedModel):
         head_mask=None,
         inputs_embeds=None,
         labels=None,
-        output_attentions=None,
+        output_attentions:Optional[bool]=None,
         output_hidden_states=None,
         return_dict=None,
         **kwargs
@@ -1386,7 +1387,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
         head_mask=None,
         inputs_embeds=None,
         labels=None,
-        output_attentions=None,
+        output_attentions:Optional[bool]=None,
         output_hidden_states=None,
         return_dict=None,
     ):
@@ -1470,7 +1471,7 @@ class BertForMultipleChoice(BertPreTrainedModel):
         head_mask=None,
         inputs_embeds=None,
         labels=None,
-        output_attentions=None,
+        output_attentions : Optional[bool]=None,
         output_hidden_states=None,
         return_dict=None,
     ):
@@ -1565,7 +1566,7 @@ class BertForTokenClassification(BertPreTrainedModel):
         head_mask=None,
         inputs_embeds=None,
         labels=None,
-        output_attentions=None,
+        output_attentions:Optional[bool]=None,
         output_hidden_states=None,
         return_dict=None,
     ):
