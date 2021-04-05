@@ -368,7 +368,7 @@ class BertAttention(nn.Module):
             output_attentions,
         )
         attention_output = self.output(self_outputs[0], hidden_states)
-        assert(self_outputs[1:] is ())
+        assert(self_outputs[1:] == ())
         outputs = (attention_output,) # + self_outputs[1:] add attentions if we output them
         return outputs
 
@@ -471,8 +471,8 @@ class BertEncoder(nn.Module):
         past_key_values : Optional[Tuple[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]]] = None,
         use_cache : bool =False,
         output_attentions:bool=False,
-        output_hidden_states=False,
-        return_dict=True,
+        output_hidden_states:bool=False,
+        return_dict:bool=False,
     ):
         all_hidden_states = None
         all_self_attentions =  None
@@ -496,17 +496,8 @@ class BertEncoder(nn.Module):
 
             hidden_states = layer_outputs[0]
 
-        if not return_dict:
-            t = (hidden_states,)
-            return t
-        return BaseModelOutputWithPastAndCrossAttentions(
-            last_hidden_state=hidden_states,
-            past_key_values=next_decoder_cache,
-            hidden_states=all_hidden_states,
-            attentions=all_self_attentions,
-            cross_attentions=all_cross_attentions,
-        )
-
+        t = (hidden_states,)
+        return t
 
 class BertPooler(nn.Module):
     def __init__(self, config):
@@ -742,8 +733,7 @@ class BertModel(BertPreTrainedModel):
 
     def __init__(self, config, add_pooling_layer=True):
         super().__init__(config)
-        self.config = config
-
+        self.num_hidden_layers = config.num_hidden_layers
         self.embeddings = BertEmbeddings(config)
         self.encoder = BertEncoder(config)
 
@@ -782,7 +772,7 @@ class BertModel(BertPreTrainedModel):
         inputs_embeds : Optional[torch.Tensor]=None,
         encoder_hidden_states : Optional[torch.Tensor]=None,
         encoder_attention_mask : Optional[torch.Tensor]=None,
-        past_key_values=None,
+        past_key_values : Optional[Tuple[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]]] = None,
         use_cache : Optional[bool]=None,
         output_attentions : Optional[bool]=None,
         output_hidden_states : Optional[bool]=None,
@@ -808,12 +798,9 @@ class BertModel(BertPreTrainedModel):
             If set to :obj:`True`, :obj:`past_key_values` key value states are returned and can be used to speed up
             decoding (see :obj:`past_key_values`).
         """
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
+        output_attentions = False
+        output_hidden_states = False
+        return_dict = False
         use_cache = False
 
         if input_ids is not None and inputs_embeds is not None:
@@ -821,13 +808,15 @@ class BertModel(BertPreTrainedModel):
         elif input_ids is not None:
             input_shape = input_ids.size()
             batch_size, seq_length = input_shape
+            device = input_ids.device
         elif inputs_embeds is not None:
             input_shape = inputs_embeds.size()[:-1]
             batch_size, seq_length = input_shape
+            device = inputs_embeds.device
         else:
             raise ValueError("You have to specify either input_ids or inputs_embeds")
 
-        device = input_ids.device if input_ids is not None else inputs_embeds.device
+        # device = input_ids.device if input_ids is not None else inputs_embeds.device
 
         # past_key_values_length
         past_key_values_length = past_key_values[0][0].shape[2] if past_key_values is not None else 0
@@ -850,7 +839,7 @@ class BertModel(BertPreTrainedModel):
         # attention_probs has shape bsz x n_heads x N x N
         # input head_mask has shape [num_heads] or [num_hidden_layers x num_heads]
         # and head_mask is converted to shape [num_hidden_layers x batch x num_heads x seq_length x seq_length]
-        head_mask = self.get_head_mask(head_mask, self.config.num_hidden_layers)
+        head_mask = self.get_head_mask(head_mask, self.num_hidden_layers) if head_mask is not None else None
 
         embedding_output = self.embeddings(
             input_ids=input_ids,
@@ -872,20 +861,9 @@ class BertModel(BertPreTrainedModel):
             return_dict=return_dict,
         )
         sequence_output = encoder_outputs[0]
-        pooled_output = self.pooler(sequence_output) if self.pooler is not None else None
+        # pooled_output = self.pooler(sequence_output) if self.pooler is not None else None
 
-        if not return_dict:
-            return (sequence_output, pooled_output) + encoder_outputs[1:]
-
-        return BaseModelOutputWithPoolingAndCrossAttentions(
-            last_hidden_state=sequence_output,
-            pooler_output=pooled_output,
-            past_key_values=encoder_outputs.past_key_values,
-            hidden_states=encoder_outputs.hidden_states,
-            attentions=encoder_outputs.attentions,
-            cross_attentions=encoder_outputs.cross_attentions,
-        )
-
+        return (sequence_output,)
 
 @add_start_docstrings(
     """
@@ -955,7 +933,7 @@ class BertForPreTraining(BertPreTrainedModel):
             >>> prediction_logits = outputs.prediction_logits
             >>> seq_relationship_logits = outputs.seq_relationship_logits
         """
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = False
 
         outputs = self.bert(
             input_ids,
@@ -982,15 +960,6 @@ class BertForPreTraining(BertPreTrainedModel):
         if not return_dict:
             output = (prediction_scores, seq_relationship_score) + outputs[2:]
             return ((total_loss,) + output) if total_loss is not None else output
-
-        return BertForPreTrainingOutput(
-            loss=total_loss,
-            prediction_logits=prediction_scores,
-            seq_relationship_logits=seq_relationship_score,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
-        )
-
 
 @add_start_docstrings(
     """Bert Model with a `language modeling` head on top for CLM fine-tuning. """, BERT_START_DOCSTRING
@@ -1661,7 +1630,7 @@ class BertForQuestionAnswering(BertPreTrainedModel):
             Positions are clamped to the length of the sequence (:obj:`sequence_length`). Position outside of the
             sequence are not taken into account for computing the loss.
         """
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = False #return_dict if return_dict is not None else self.config.use_return_dict
 
         outputs = self.bert(
             input_ids,
@@ -1683,30 +1652,22 @@ class BertForQuestionAnswering(BertPreTrainedModel):
         end_logits = end_logits.squeeze(-1)
 
         total_loss = None
-        if start_positions is not None and end_positions is not None:
-            # If we are on multi-GPU, split add a dimension
-            if len(start_positions.size()) > 1:
-                start_positions = start_positions.squeeze(-1)
-            if len(end_positions.size()) > 1:
-                end_positions = end_positions.squeeze(-1)
-            # sometimes the start/end positions are outside our model inputs, we ignore these terms
-            ignored_index = start_logits.size(1)
-            start_positions.clamp_(0, ignored_index)
-            end_positions.clamp_(0, ignored_index)
+        # if start_positions is not None and end_positions is not None:
+        #     # If we are on multi-GPU, split add a dimension
+        #     if len(start_positions.size()) > 1:
+        #         start_positions = start_positions.squeeze(-1)
+        #     if len(end_positions.size()) > 1:
+        #         end_positions = end_positions.squeeze(-1)
+        #     # sometimes the start/end positions are outside our model inputs, we ignore these terms
+        #     ignored_index = start_logits.size(1)
+        #     start_positions.clamp_(0, ignored_index)
+        #     end_positions.clamp_(0, ignored_index)
 
-            loss_fct = CrossEntropyLoss(ignore_index=ignored_index)
-            start_loss = loss_fct(start_logits, start_positions)
-            end_loss = loss_fct(end_logits, end_positions)
-            total_loss = (start_loss + end_loss) / 2
+        #     loss_fct = CrossEntropyLoss(ignore_index=ignored_index)
+        #     start_loss = loss_fct(start_logits, start_positions)
+        #     end_loss = loss_fct(end_logits, end_positions)
+        #     total_loss = (start_loss + end_loss) / 2
 
-        if not return_dict:
-            output = (start_logits, end_logits) + outputs[2:]
-            return ((total_loss,) + output) if total_loss is not None else output
-
-        return QuestionAnsweringModelOutput(
-            loss=total_loss,
-            start_logits=start_logits,
-            end_logits=end_logits,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
-        )
+        # output = (start_logits, end_logits) + outputs[2:]
+        # return ((total_loss,) + output) if total_loss is not None else output
+        return (start_logits, end_logits)
