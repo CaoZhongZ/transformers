@@ -469,7 +469,7 @@ class BertEncoder(nn.Module):
         encoder_hidden_states : Optional[torch.Tensor] = None,
         encoder_attention_mask : Optional[torch.Tensor] = None,
         past_key_values : Optional[Tuple[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]]] = None,
-        use_cache=False,
+        use_cache : bool =False,
         output_attentions:bool=False,
         output_hidden_states=False,
         return_dict=True,
@@ -478,7 +478,8 @@ class BertEncoder(nn.Module):
         all_self_attentions =  None
         all_cross_attentions = None
 
-        next_decoder_cache = () if use_cache else None
+        assert not use_cache
+        next_decoder_cache = None
         for i, layer_module in enumerate(self.layer):
             layer_head_mask = head_mask[i] if head_mask is not None else None
             past_key_value = past_key_values[i] if past_key_values is not None else None
@@ -494,20 +495,9 @@ class BertEncoder(nn.Module):
             )
 
             hidden_states = layer_outputs[0]
-            if use_cache:
-                next_decoder_cache += (layer_outputs[-1],)
 
         if not return_dict:
-            t = ()
-            for v in [
-                hidden_states,
-                next_decoder_cache,
-                all_hidden_states,
-                all_self_attentions,
-                all_cross_attentions,
-                ]:
-                if v is not None:
-                    t = t,v
+            t = (hidden_states,)
             return t
         return BaseModelOutputWithPastAndCrossAttentions(
             last_hidden_state=hidden_states,
