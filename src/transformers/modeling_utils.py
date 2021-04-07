@@ -86,34 +86,34 @@ def find_pruneable_heads_and_indices(
     return heads, index
 
 
-def get_parameter_device(parameter: Union[nn.Module, GenerationMixin, "ModuleUtilsMixin"]):
-    try:
-        return next(parameter.parameters()).device
-    except StopIteration:
-        # For nn.DataParallel compatibility in PyTorch 1.5
+# def get_parameter_device(parameter: Union[nn.Module, GenerationMixin, "ModuleUtilsMixin"]):
+#     try:
+#         return next(parameter.parameters()).device
+#     except StopIteration:
+#         # For nn.DataParallel compatibility in PyTorch 1.5
+#
+#         def find_tensor_attributes(module: nn.Module) -> List[Tuple[str, Tensor]]:
+#             tuples = [(k, v) for k, v in module.__dict__.items() if torch.is_tensor(v)]
+#             return tuples
+#
+#         gen = parameter._named_members(get_members_fn=find_tensor_attributes)
+#         first_tuple = next(gen)
+#         return first_tuple[1].device
 
-        def find_tensor_attributes(module: nn.Module) -> List[Tuple[str, Tensor]]:
-            tuples = [(k, v) for k, v in module.__dict__.items() if torch.is_tensor(v)]
-            return tuples
 
-        gen = parameter._named_members(get_members_fn=find_tensor_attributes)
-        first_tuple = next(gen)
-        return first_tuple[1].device
-
-
-def get_parameter_dtype(parameter: Union[nn.Module, GenerationMixin, "ModuleUtilsMixin"]):
-    try:
-        return next(parameter.parameters()).dtype
-    except StopIteration:
-        # For nn.DataParallel compatibility in PyTorch 1.5
-
-        def find_tensor_attributes(module: nn.Module) -> List[Tuple[str, Tensor]]:
-            tuples = [(k, v) for k, v in module.__dict__.items() if torch.is_tensor(v)]
-            return tuples
-
-        gen = parameter._named_members(get_members_fn=find_tensor_attributes)
-        first_tuple = next(gen)
-        return first_tuple[1].dtype
+# def get_parameter_dtype(parameter: Union[nn.Module, GenerationMixin, "ModuleUtilsMixin"]):
+#     try:
+#         return next(parameter.parameters()).dtype
+#     except StopIteration:
+#         # For nn.DataParallel compatibility in PyTorch 1.5
+#
+#         def find_tensor_attributes(module: nn.Module) -> List[Tuple[str, Tensor]]:
+#             tuples = [(k, v) for k, v in module.__dict__.items() if torch.is_tensor(v)]
+#             return tuples
+#
+#         gen = parameter._named_members(get_members_fn=find_tensor_attributes)
+#         first_tuple = next(gen)
+#         return first_tuple[1].dtype
 
 
 class ModuleUtilsMixin:
@@ -169,20 +169,20 @@ class ModuleUtilsMixin:
             module.mem_rss_post_forward = 0
             module.mem_rss_pre_forward = 0
 
-    @property
-    def device(self) -> device:
-        """
-        :obj:`torch.device`: The device on which the module is (assuming that all the module parameters are on the same
-        device).
-        """
-        return get_parameter_device(self)
+    # @property
+    # def device(self) -> device:
+    #     """
+    #     :obj:`torch.device`: The device on which the module is (assuming that all the module parameters are on the same
+    #     device).
+    #     """
+    #     return get_parameter_device(self)
 
-    @property
-    def dtype(self) -> dtype:
-        """
-        :obj:`torch.dtype`: The dtype of the module (assuming that all the module parameters have the same dtype).
-        """
-        return get_parameter_dtype(self)
+    # @property
+    # def dtype(self) -> dtype:
+    #     """
+    #     :obj:`torch.dtype`: The dtype of the module (assuming that all the module parameters have the same dtype).
+    #     """
+    #     return get_parameter_dtype(self)
 
     def invert_attention_mask(self, encoder_attention_mask: Tensor) -> Tensor:
         """
@@ -398,12 +398,12 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin):
 
     is_parallelizable = False
 
-    @property
-    def dummy_inputs(self) -> Dict[str, torch.Tensor]:
-        """
-        :obj:`Dict[str, torch.Tensor]`: Dummy inputs to do a forward pass in the network.
-        """
-        return {"input_ids": torch.tensor(DUMMY_INPUTS)}
+    # @property
+    # def dummy_inputs(self) -> Dict[str, torch.Tensor]:
+    #     """
+    #     :obj:`Dict[str, torch.Tensor]`: Dummy inputs to do a forward pass in the network.
+    #     """
+    #     return {"input_ids": torch.tensor(DUMMY_INPUTS)}
 
     def __init__(self, config: PretrainedConfig, *inputs, **kwargs):
         super().__init__()
@@ -417,12 +417,12 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin):
         self.config = config
         self.name_or_path = config.name_or_path
 
-    @property
-    def base_model(self) -> nn.Module:
-        """
-        :obj:`torch.nn.Module`: The main body of the model.
-        """
-        return getattr(self, self.base_model_prefix, self)
+    # @property
+    # def base_model(self):
+    #     """
+    #     :obj:`torch.nn.Module`: The main body of the model.
+    #     """
+    #     return getattr(self, self.base_model_prefix, self)
 
     def get_input_embeddings(self) -> nn.Module:
         """
@@ -726,28 +726,28 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin):
         self.apply(self._init_weights)
 
         # Prune heads if needed
-        if self.config.pruned_heads:
-            self.prune_heads(self.config.pruned_heads)
+        # if self.config.pruned_heads:
+        #     self.prune_heads(self.config.pruned_heads)
 
         # Tie weights if needed
         self.tie_weights()
 
-    def prune_heads(self, heads_to_prune: Dict[int, List[int]]):
-        """
-        Prunes heads of the base model.
+    # def prune_heads(self, heads_to_prune: Dict[int, List[int]]):
+    #     """
+    #     Prunes heads of the base model.
 
-        Arguments:
-            heads_to_prune (:obj:`Dict[int, List[int]]`):
-                Dictionary with keys being selected layer indices (:obj:`int`) and associated values being the list of
-                heads to prune in said layer (list of :obj:`int`). For instance {1: [0, 2], 2: [2, 3]} will prune heads
-                0 and 2 on layer 1 and heads 2 and 3 on layer 2.
-        """
-        # save new sets of pruned heads as union of previously stored pruned heads and newly pruned heads
-        for layer, heads in heads_to_prune.items():
-            union_heads = set(self.config.pruned_heads.get(layer, [])) | set(heads)
-            self.config.pruned_heads[layer] = list(union_heads)  # Unfortunately we have to store it as list for JSON
+    #     Arguments:
+    #         heads_to_prune (:obj:`Dict[int, List[int]]`):
+    #             Dictionary with keys being selected layer indices (:obj:`int`) and associated values being the list of
+    #             heads to prune in said layer (list of :obj:`int`). For instance {1: [0, 2], 2: [2, 3]} will prune heads
+    #             0 and 2 on layer 1 and heads 2 and 3 on layer 2.
+    #     """
+    #     # save new sets of pruned heads as union of previously stored pruned heads and newly pruned heads
+    #     for layer, heads in heads_to_prune.items():
+    #         union_heads = set(self.config.pruned_heads.get(layer, [])) | set(heads)
+    #         self.config.pruned_heads[layer] = list(union_heads)  # Unfortunately we have to store it as list for JSON
 
-        self.base_model._prune_heads(heads_to_prune)
+    #     self.base_model._prune_heads(heads_to_prune)
 
     def save_pretrained(
         self,
