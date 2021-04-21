@@ -91,15 +91,16 @@ class QuantEmbedding(nn.Module):
                 None,
             )
 
-        w = self.weight
-        w_transform = w.data.detach()
-        w_min = w_transform.min().expand(1)
-        w_max = w_transform.max().expand(1)
+        if self.training:
+            w = self.weight
+            w_transform = w.data.detach()
+            w_min = w_transform.min().expand(1)
+            w_max = w_transform.max().expand(1)
 
-        self.weight_scaling_factor = symmetric_linear_quantization_params(self.weight_bit, w_min, w_max, False)
-        self.weight_integer = self.weight_function(
-            self.weight, self.weight_bit, self.percentile_mode, self.weight_scaling_factor
-        )
+            self.weight_scaling_factor = symmetric_linear_quantization_params(self.weight_bit, w_min, w_max, False)
+            self.weight_integer = self.weight_function(
+                self.weight, self.weight_bit, self.percentile_mode, self.weight_scaling_factor
+            )
 
         emb_int = F.embedding(
             x,
@@ -272,23 +273,24 @@ class QuantLinear(nn.Module):
             "Please add a QuantAct layer with `per_channel = True` before this QuantAct layer"
         )
 
-        w = self.weight
-        w_transform = w.data.detach()
-        if self.per_channel:
-            w_min, _ = torch.min(w_transform, dim=1, out=None)
-            w_max, _ = torch.max(w_transform, dim=1, out=None)
-        else:
-            w_min = w_transform.min().expand(1)
-            w_max = w_transform.max().expand(1)
+        if self.training:
+            w = self.weight
+            w_transform = w.data.detach()
+            if self.per_channel:
+                w_min, _ = torch.min(w_transform, dim=1, out=None)
+                w_max, _ = torch.max(w_transform, dim=1, out=None)
+            else:
+                w_min = w_transform.min().expand(1)
+                w_max = w_transform.max().expand(1)
 
-        self.fc_scaling_factor = symmetric_linear_quantization_params(self.weight_bit, w_min, w_max, self.per_channel)
-        self.weight_integer = self.weight_function(
-            self.weight, self.weight_bit, self.percentile_mode, self.fc_scaling_factor
-        )
+            self.fc_scaling_factor = symmetric_linear_quantization_params(self.weight_bit, w_min, w_max, self.per_channel)
+            self.weight_integer = self.weight_function(
+                self.weight, self.weight_bit, self.percentile_mode, self.fc_scaling_factor
+            )
 
         bias_scaling_factor = self.fc_scaling_factor * prev_act_scaling_factor
 
-        if self.bias is not None:
+        if self.bias is not None and self.training:
             self.bias_integer = self.weight_function(self.bias, self.bias_bit, False, bias_scaling_factor)
 
         prev_act_scaling_factor = prev_act_scaling_factor.view(1, -1)
