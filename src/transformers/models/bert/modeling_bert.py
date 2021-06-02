@@ -482,7 +482,7 @@ class BertEncoder(nn.Module):
         next_decoder_cache = None
         for i, layer_module in enumerate(self.layer):
             layer_head_mask = head_mask[i] if head_mask is not None else None
-            past_key_value = past_key_values[i] if past_key_values is not None else None
+            past_key_value = None # past_key_values[i] if past_key_values is not None else None
 
             layer_outputs = layer_module(
                 hidden_states,
@@ -819,7 +819,7 @@ class BertModel(BertPreTrainedModel):
         # device = input_ids.device if input_ids is not None else inputs_embeds.device
 
         # past_key_values_length
-        past_key_values_length = past_key_values[0][0].shape[2] if past_key_values is not None else 0
+        past_key_values_length = 0 # past_key_values[0][0].shape[2] if past_key_values is not None else 0
 
         if attention_mask is None:
             attention_mask = torch.ones(((batch_size, seq_length + past_key_values_length)), device=device)
