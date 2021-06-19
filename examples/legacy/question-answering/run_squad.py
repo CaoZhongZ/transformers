@@ -342,7 +342,7 @@ def evaluate(args, model, tokenizer, prefix=""):
                 )
 
             else:
-                start_logits, end_logits = output
+                start_logits, end_logits = output[0], output[1]
                 result = SquadResult(unique_id, start_logits, end_logits)
 
             all_results.append(result)
@@ -728,15 +728,16 @@ def main():
         torch.distributed.barrier()
 
     args.model_type = args.model_type.lower()
-    config = AutoConfig.from_pretrained(
-        args.config_name if args.config_name else args.model_name_or_path,
-        cache_dir=args.cache_dir if args.cache_dir else None,
-    )
     tokenizer = AutoTokenizer.from_pretrained(
         args.tokenizer_name if args.tokenizer_name else args.model_name_or_path,
         do_lower_case=args.do_lower_case,
         cache_dir=args.cache_dir if args.cache_dir else None,
         use_fast=False,  # SquadDataset is not compatible with Fast tokenizers which have a smarter overflow handeling
+    )
+    print('----------------load model-----------------------')
+    config = AutoConfig.from_pretrained(
+        args.config_name if args.config_name else args.model_name_or_path,
+        cache_dir=args.cache_dir if args.cache_dir else None,
     )
     model = AutoModelForQuestionAnswering.from_pretrained(
         args.model_name_or_path,
@@ -788,7 +789,7 @@ def main():
 
         # SquadDataset is not compatible with Fast tokenizers which have a smarter overflow handeling
         # So we use use_fast=False here for now until Fast-tokenizer-compatible-examples are out
-        tokenizer = AutoTokenizer.from_pretrained(args.output_dir, do_lower_case=args.do_lower_case, use_fast=False)
+        # tokenizer = AutoTokenizer.from_pretrained(args.output_dir, do_lower_case=args.do_lower_case, use_fast=False)
         model.to(args.device)
 
     # Evaluation - we can ask to evaluate all the checkpoints (sub-directories) in a directory

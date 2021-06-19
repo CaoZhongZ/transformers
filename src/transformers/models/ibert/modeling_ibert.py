@@ -199,7 +199,7 @@ class IBertSelfAttention(nn.Module):
             weight_bit=self.weight_bit,
             bias_bit=self.bias_bit,
             quant_mode=self.quant_mode,
-            per_channel=True,
+            per_channel=False,
         )
         self.key = QuantLinear(
             config.hidden_size,
@@ -208,7 +208,7 @@ class IBertSelfAttention(nn.Module):
             weight_bit=self.weight_bit,
             bias_bit=self.bias_bit,
             quant_mode=self.quant_mode,
-            per_channel=True,
+            per_channel=False,
         )
         self.value = QuantLinear(
             config.hidden_size,
@@ -217,7 +217,7 @@ class IBertSelfAttention(nn.Module):
             weight_bit=self.weight_bit,
             bias_bit=self.bias_bit,
             quant_mode=self.quant_mode,
-            per_channel=True,
+            per_channel=False,
         )
 
         # Requantization (32bit -> 8bit) for Q, K, V activations
@@ -334,7 +334,7 @@ class IBertSelfOutput(nn.Module):
             weight_bit=self.weight_bit,
             bias_bit=self.bias_bit,
             quant_mode=self.quant_mode,
-            per_channel=True,
+            per_channel=False,
         )
         self.ln_input_act = QuantAct(self.ln_input_bit, quant_mode=self.quant_mode)
         self.LayerNorm = IntLayerNorm(
@@ -427,7 +427,7 @@ class IBertIntermediate(nn.Module):
             weight_bit=self.weight_bit,
             bias_bit=self.bias_bit,
             quant_mode=self.quant_mode,
-            per_channel=True,
+            per_channel=False,
         )
         assert config.hidden_act == "gelu", "I-BERT only supports 'gelu' for `config.hidden_act`"
         self.intermediate_act_fn = IntGELU(quant_mode=self.quant_mode, force_dequant=config.force_dequant)
@@ -463,7 +463,7 @@ class IBertOutput(nn.Module):
             weight_bit=self.weight_bit,
             bias_bit=self.bias_bit,
             quant_mode=self.quant_mode,
-            per_channel=True,
+            per_channel=False,
         )
         self.ln_input_act = QuantAct(self.ln_input_bit, quant_mode=self.quant_mode)
         self.LayerNorm = IntLayerNorm(
