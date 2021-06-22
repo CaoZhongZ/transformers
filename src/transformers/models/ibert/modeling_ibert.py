@@ -112,19 +112,16 @@ class IBertEmbeddings(nn.Module):
     def forward(
         self, input_ids=None, token_type_ids=None, position_ids=None, inputs_embeds=None, past_key_values_length=0
     ):
-        if position_ids is None:
-            if input_ids is not None:
-                # Create the position ids from the input token ids. Any padded tokens remain padded.
-                position_ids = create_position_ids_from_input_ids(
-                    input_ids, self.padding_idx, past_key_values_length
-                ).to(input_ids.device)
-            else:
-                position_ids = self.create_position_ids_from_inputs_embeds(inputs_embeds)
-
         if input_ids is not None:
             input_shape = input_ids.size()
         else:
+            assert inputs_embeds is not None
             input_shape = inputs_embeds.size()[:-1]
+
+        seq_length = input_shape[1]
+
+        if position_ids is None:
+            position_ids = self.position_ids[:, past_key_values_length : seq_length + past_key_values_length]
 
         if token_type_ids is None:
             token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=self.position_ids.device)

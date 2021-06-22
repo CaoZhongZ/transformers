@@ -244,7 +244,10 @@ class QuantLinear(nn.Module):
 
         self.weight = nn.Parameter(torch.zeros([out_features, in_features]))
         self.register_buffer("weight_integer", torch.zeros_like(self.weight))
-        self.register_buffer("fc_scaling_factor", torch.zeros(self.out_features))
+        if not per_channel:
+            self.register_buffer("fc_scaling_factor", torch.zeros([1]))
+        else:
+            self.register_buffer("fc_scaling_factor", torch.zeros(self.out_features))
         if bias:
             self.bias = nn.Parameter(torch.zeros(out_features))
             self.register_buffer("bias_integer", torch.zeros_like(self.bias))
@@ -293,9 +296,10 @@ class QuantLinear(nn.Module):
 
         prev_act_scaling_factor = prev_act_scaling_factor.view(1, -1)
         x_int = x / prev_act_scaling_factor
+        y_int = F.linear(x_int, weight=self.weight_integer, bias=self.bias_integer)
 
         return (
-            F.linear(x_int, weight=self.weight_integer, bias=self.bias_integer) * bias_scaling_factor,
+            y_int * bias_scaling_factor,
             bias_scaling_factor,
         )
 
