@@ -91,15 +91,18 @@ class QuantEmbedding(nn.Module):
                 None,
             )
 
-        w = self.weight
-        w_transform = w.data.detach()
-        w_min = w_transform.min().expand(1)
-        w_max = w_transform.max().expand(1)
+        if self.training:
+            w = self.weight
+            w_transform = w.data.detach()
+            w_min = w_transform.min().expand(1)
+            w_max = w_transform.max().expand(1)
 
-        self.weight_scaling_factor = symmetric_linear_quantization_params(self.weight_bit, w_min, w_max, False)
-        self.weight_integer = self.weight_function(
-            self.weight, self.weight_bit, self.percentile_mode, self.weight_scaling_factor
-        )
+            self.weight_scaling_factor = symmetric_linear_quantization_params(
+                self.weight_bit, w_min, w_max, False)
+            self.weight_integer = self.weight_function(
+                self.weight, self.weight_bit, self.percentile_mode,
+                self.weight_scaling_factor
+            )
 
         emb_int = F.embedding(
             x,
@@ -138,7 +141,7 @@ class QuantAct(nn.Module):
         self.quant_mode = quant_mode
         self.per_channel = per_channel
         self.percentile = False
-        self.act_function = SymmetricQuantFunction.apply
+        self.act_function = SymmetricQuantAct.apply
 
         if not self.per_channel:
             self.register_buffer("x_min", torch.zeros(1))
@@ -204,7 +207,11 @@ class QuantAct(nn.Module):
 
         if pre_act_scaling_factor is None:
             # this is for the input quantization
-            quant_act_int = self.act_function(x, self.activation_bit, self.percentile, self.act_scaling_factor)
+            quant_act_int = self.act_function(
+                x,
+                self.activation_bit,
+                self.percentile,
+                self.act_scaling_factor)
         else:
             quant_act_int = FixedPointMul.apply(
                 x,
@@ -284,7 +291,8 @@ class QuantLinear(nn.Module):
             w_min = w_transform.min().expand(1)
             w_max = w_transform.max().expand(1)
 
-        self.fc_scaling_factor = symmetric_linear_quantization_params(self.weight_bit, w_min, w_max, self.per_channel)
+        self.fc_scaling_factor = symmetric_linear_quantization_params(
+            self.weight_bit, w_min, w_max, self.per_channel)
         self.weight_integer = self.weight_function(
             self.weight, self.weight_bit, self.percentile_mode, self.fc_scaling_factor
         )
@@ -292,7 +300,8 @@ class QuantLinear(nn.Module):
         bias_scaling_factor = self.fc_scaling_factor * prev_act_scaling_factor
 
         if self.bias is not None:
-            self.bias_integer = self.weight_function(self.bias, self.bias_bit, False, bias_scaling_factor)
+            self.bias_integer = self.weight_function(
+                self.bias, self.bias_bit, False, bias_scaling_factor)
 
         prev_act_scaling_factor = prev_act_scaling_factor.view(1, -1)
         x_int = x / prev_act_scaling_factor
@@ -302,7 +311,6 @@ class QuantLinear(nn.Module):
             y_int * bias_scaling_factor,
             bias_scaling_factor,
         )
-
 
 class IntGELU(nn.Module):
     """
@@ -664,7 +672,7 @@ class SymmetricQuantFunction(Function):
 
         n = 2 ** (k - 1) - 1
         new_quant_x = linear_quantize(x, scale, zero_point, inplace=False)
-        new_quant_x = torch.clamp(new_quant_x, -n, n - 1)
+        new_quant_x = torch.clamp(new_quant_x, -n, n)
 
         ctx.scale = scale
         return new_quant_x
@@ -683,6 +691,50 @@ class SymmetricQuantFunction(Function):
 
         return grad_output.clone() / scale, None, None, None, None
 
+class SymmetricQuantAct(Function):
+    """
+    Class to quantize the given floating-point values using symmetric quantization with given range and bitwidth.
+    """
+
+    @staticmethod
+    def forward(ctx, x, k, percentile_mode, scale):
+        """
+        Args:
+            x (:obj:`torch.Tensor`):
+                Floating point tensor to be quantized.
+            k (:obj:`int`):
+                Quantization bitwidth.
+            percentile_mode (:obj:`bool`):
+                Whether or not to use percentile calibration.
+            scale (:obj:`torch.Tensor`):
+                Pre-calculated scaling factor for `x`. Note that the current implementation of SymmetricQuantFunction
+                requires pre-calculated scaling factor.
+
+        Returns:
+            :obj:`torch.Tensor`: Symmetric-quantized value of `input`.
+        """
+        zero_point = torch.tensor(0.0).to(scale.device)
+
+        n = 2 ** (k - 1) - 1
+        new_quant_x = linear_quantize(x, scale, zero_point, inplace=False)
+        new_quant_x = torch.clamp(new_quant_x, -n -1, n)
+
+        ctx.scale = scale
+        return new_quant_x
+
+    @staticmethod
+    def backward(ctx, grad_output):
+
+        scale = ctx.scale
+        if len(grad_output.shape) == 4:
+            scale = scale.view(-1, 1, 1, 1)
+        # reshape scale and zeropoint for linear weights
+        elif len(grad_output.shape) == 2:
+            scale = scale.view(-1, 1)
+        else:
+            scale = scale.view(-1)
+
+        return grad_output.clone() / scale, None, None, None, None
 
 class floor_ste(Function):
     """

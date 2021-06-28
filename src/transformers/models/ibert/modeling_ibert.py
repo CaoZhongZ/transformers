@@ -141,7 +141,7 @@ class IBertEmbeddings(nn.Module):
 
         if self.position_embedding_type == "absolute":
             position_embeddings, position_embeddings_scaling_factor = self.position_embeddings(position_ids)
-            embeddings, embeddings_scaling_factor = self.embeddings_act1(
+            embeddings, embeddings_scaling_factor = self.embeddings_act2(
                 embeddings,
                 embeddings_scaling_factor,
                 identity=position_embeddings,
