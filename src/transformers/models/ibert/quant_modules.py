@@ -640,8 +640,8 @@ def symmetric_linear_quantization_params(num_bits, saturation_min, saturation_ma
             scale = torch.clamp(scale, min=1e-8) / n
 
         else:
-            scale = max(saturation_min.abs(), saturation_max.abs())
-            scale = torch.clamp(scale, min=1e-8) / n
+            saturate_max = max(saturation_min.abs(), saturation_max.abs())
+            scale = torch.clamp(saturate_max, min=1e-8) / n
 
     return scale
 
@@ -717,7 +717,7 @@ class SymmetricQuantAct(Function):
 
         n = 2 ** (k - 1) - 1
         new_quant_x = linear_quantize(x, scale, zero_point, inplace=False)
-        new_quant_x = torch.clamp(new_quant_x, -n -1, n)
+        new_quant_x = torch.clamp(new_quant_x, -n, n)
 
         ctx.scale = scale
         return new_quant_x
@@ -873,7 +873,7 @@ class FixedPointMul(Function):
 
                 output = output1 + output
 
-            return torch.clamp(output.type(torch.float), -n - 1, n)
+            return torch.clamp(output.type(torch.float), -n, n)
 
     @staticmethod
     def backward(ctx, grad_output):
