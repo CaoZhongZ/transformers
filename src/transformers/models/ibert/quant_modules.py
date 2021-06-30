@@ -797,6 +797,13 @@ def batch_frexp(inputs, max_bit=31):
         torch.from_numpy(output_e).to(inputs.device).view(shape_of_input),
     )
 
+def integer_multiply_shift_round(x, m, e, accuracy=23):
+    tmp = m * 2**accuracy * x
+
+    if (e - accuracy) >= 0:
+        return int_mul * 2**(e-accuracy)
+    else:
+        return torch.round(tmp / 2**(accuracy-e))
 
 class FixedPointMul(Function):
     """
@@ -848,28 +855,27 @@ class FixedPointMul(Function):
             ctx.z_scaling_factor = z_scaling_factor
 
             z_int = torch.round(pre_act / pre_act_scaling_factor)
-            _A = pre_act_scaling_factor.type(torch.double)
-            _B = (z_scaling_factor.type(torch.float)).type(torch.double)
+            _A = pre_act_scaling_factor
+            _B = z_scaling_factor
+
             new_scale = _A / _B
             new_scale = reshape(new_scale)
 
-            m, e = batch_frexp(new_scale)
+            m, e = torch.frexp(new_scale)
 
-            output = z_int.type(torch.double) * m.type(torch.double)
-            output = torch.round(output / (2.0 ** e))
+            output = integer_multiply_shift_round(z_int, m, e)
 
             if identity is not None:
                 # needs addition of identity activation
                 wx_int = torch.round(identity / identity_scaling_factor)
 
-                _A = identity_scaling_factor.type(torch.double)
-                _B = (z_scaling_factor.type(torch.float)).type(torch.double)
+                _A = identity_scaling_factor
+                _B = z_scaling_factor
                 new_scale = _A / _B
                 new_scale = reshape(new_scale)
 
-                m1, e1 = batch_frexp(new_scale)
-                output1 = wx_int.type(torch.double) * m1.type(torch.double)
-                output1 = torch.round(output1 / (2.0 ** e1))
+                m1, e1 = torch.frexp(new_scale)
+                output1 = integer_multiply_shift_round(wx_int, m1, e1)
 
                 output = output1 + output
 
