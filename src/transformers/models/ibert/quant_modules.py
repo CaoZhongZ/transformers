@@ -800,10 +800,7 @@ def batch_frexp(inputs, max_bit=31):
 def integer_multiply_shift_round(x, m, e, accuracy=23):
     tmp = m * 2**accuracy * x
 
-    if (e - accuracy) >= 0:
-        return int_mul * 2**(e-accuracy)
-    else:
-        return torch.round(tmp / 2**(accuracy-e))
+    return torch.round(tmp * 2**(e - accuracy))
 
 class FixedPointMul(Function):
     """
