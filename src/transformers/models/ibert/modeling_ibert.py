@@ -153,23 +153,6 @@ class IBertEmbeddings(nn.Module):
         embeddings, embeddings_scaling_factor = self.output_activation(embeddings, embeddings_scaling_factor)
         return embeddings, embeddings_scaling_factor
 
-    def create_position_ids_from_inputs_embeds(self, inputs_embeds):
-        """
-        We are provided embeddings directly. We cannot infer which are padded so just generate sequential position ids.
-
-        Args:
-            inputs_embeds: torch.Tensor
-
-        Returns: torch.Tensor
-        """
-        input_shape = inputs_embeds.size()[:-1]
-        sequence_length = input_shape[1]
-
-        position_ids = torch.arange(
-            self.padding_idx + 1, sequence_length + self.padding_idx + 1, dtype=torch.long, device=inputs_embeds.device
-        )
-        return position_ids.unsqueeze(0).expand(input_shape)
-
 
 class IBertSelfAttention(nn.Module):
     def __init__(self, config):
@@ -282,7 +265,8 @@ class IBertSelfAttention(nn.Module):
         attention_probs, attention_probs_scaling_factor = self.softmax(
             attention_scores, attention_scores_scaling_factor
         )
-        attention_probs, attention_probs_scaling_factor = self.softmax_activation(attention_probs, specified_min=attention_probs.min(), specified_max=attention_probs.max())
+        attention_probs, attention_probs_scaling_factor = self.softmax_activation(
+                attention_probs, specified_min=attention_probs.min(), specified_max=attention_probs.max())
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
         attention_probs = self.dropout(attention_probs)

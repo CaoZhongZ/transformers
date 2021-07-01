@@ -370,8 +370,6 @@ class IntGELU(nn.Module):
         x_float = x
         erf = self.poly_erf(x_float / self.k)
         y = x_float * 0.5 * (1 + erf)
-        serf = (scaling_factor / self.k)**2 * self.coeff[0] * 2**14
-        scaling_factor = scaling_factor * serf / 2
         return y, None
 
 
@@ -764,39 +762,6 @@ class round_ste(Function):
     def backward(ctx, grad_output):
         return grad_output.clone()
 
-
-def batch_frexp(inputs, max_bit=31):
-    """
-    Decompose the scaling factor into mantissa and twos exponent.
-
-    Args:
-        scaling_factor (:obj:`torch.Tensor`):
-            Target scaling factor to decompose.
-
-    Returns:
-        :obj:``Tuple(torch.Tensor, torch.Tensor)`: mantisa and exponent
-    """
-
-    shape_of_input = inputs.size()
-
-    # trans the input to be a 1-d tensor
-    inputs = inputs.view(-1)
-
-    output_m, output_e = np.frexp(inputs.cpu().numpy())
-    tmp_m = []
-    for m in output_m:
-        int_m_shifted = int(
-            decimal.Decimal(m * (2 ** max_bit)).quantize(decimal.Decimal("1"), rounding=decimal.ROUND_HALF_UP)
-        )
-        tmp_m.append(int_m_shifted)
-    output_m = np.array(tmp_m)
-
-    output_e = float(max_bit) - output_e
-
-    return (
-        torch.from_numpy(output_m).to(inputs.device).view(shape_of_input),
-        torch.from_numpy(output_e).to(inputs.device).view(shape_of_input),
-    )
 
 def integer_multiply_shift_round(x, m, e, accuracy=23):
     tmp = m * 2.0**accuracy * x
