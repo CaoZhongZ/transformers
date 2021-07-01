@@ -141,7 +141,7 @@ class IBertEmbeddings(nn.Module):
 
         if self.position_embedding_type == "absolute":
             position_embeddings, position_embeddings_scaling_factor = self.position_embeddings(position_ids)
-            embeddings, embeddings_scaling_factor = self.embeddings_act2(
+            embeddings, embeddings_scaling_factor = self.embeddings_act1(
                 embeddings,
                 embeddings_scaling_factor,
                 identity=position_embeddings,
@@ -223,6 +223,8 @@ class IBertSelfAttention(nn.Module):
         self.value_activation = QuantAct(self.act_bit, quant_mode=self.quant_mode)
         self.output_activation = QuantAct(self.act_bit, quant_mode=self.quant_mode)
 
+        self.softmax_activation = QuantAct(self.act_bit, quant_mode=self.quant_mode)
+
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
         self.position_embedding_type = getattr(config, "position_embedding_type", "absolute")
         assert (
@@ -280,7 +282,7 @@ class IBertSelfAttention(nn.Module):
         attention_probs, attention_probs_scaling_factor = self.softmax(
             attention_scores, attention_scores_scaling_factor
         )
-
+        attention_probs, attention_probs_scaling_factor = self.softmax_activation(attention_probs, specified_min=attention_probs.min(), specified_max=attention_probs.max())
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
         attention_probs = self.dropout(attention_probs)

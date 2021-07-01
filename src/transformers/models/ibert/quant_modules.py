@@ -337,7 +337,6 @@ class IntGELU(nn.Module):
         self.k = 1.4142
         self.const = 14  # dummy integer constant
         self.coeff = [-0.2888, -1.769, 1]  # a(x+b)**2 + c
-        self.coeff[2] /= self.coeff[0]
 
     def int_erf(self, x_int, scaling_factor):
         b_int = torch.floor(self.coeff[1] / scaling_factor)
@@ -354,19 +353,26 @@ class IntGELU(nn.Module):
 
         return y_int, scaling_factor
 
+    def poly_erf(self, x):
+        """
+        input is float
+        """
+        sign = torch.sign(x)
+        abs_x = torch.abs(x)
+        abs_x = torch.minimum(abs_x, torch.tensor(-self.coeff[1]))
+        y = sign * (self.coeff[0] * (abs_x + self.coeff[1])**2 + self.coeff[2])
+        return y
+
     def forward(self, x, scaling_factor=None):
         if not self.quant_mode:
             return self.activation_fn(x), None
 
-        x_int = x / scaling_factor
-        sigmoid_int, sigmoid_scaling_factor = self.int_erf(x_int, scaling_factor / self.k)
-
-        shift_int = 1.0 // sigmoid_scaling_factor
-
-        x_int = x_int * (sigmoid_int + shift_int)
-        scaling_factor = scaling_factor * sigmoid_scaling_factor / 2
-
-        return x_int * scaling_factor, scaling_factor
+        x_float = x
+        erf = self.poly_erf(x_float / self.k)
+        y = x_float * 0.5 * (1 + erf)
+        serf = (scaling_factor / self.k)**2 * self.coeff[0] * 2**14
+        scaling_factor = scaling_factor * serf / 2
+        return y, None
 
 
 class IntSoftmax(nn.Module):
@@ -397,8 +403,6 @@ class IntSoftmax(nn.Module):
         self.x0 = -0.6931  # -ln2
         self.const = 30  # dummy integer constant
         self.coef = [0.35815147, 0.96963238, 1.0]  # ax**2 + bx + c
-        self.coef[1] /= self.coef[0]
-        self.coef[2] /= self.coef[0]
 
     def int_polynomial(self, x_int, scaling_factor):
         with torch.no_grad():
@@ -424,21 +428,18 @@ class IntSoftmax(nn.Module):
         if not self.quant_mode:
             return nn.Softmax(dim=-1)(x), None
 
-        x_int = x / scaling_factor
+        x_float = x
+        x_float_max, _ = torch.max(x_float, dim=-1, keepdim=True)
+        x_float = x_float - x_float_max
+        r = torch.floor(x_float / self.x0)
+        p = x_float - r * self.x0
+        appro_exp_x = (self.coef[0] * p**2 + self.coef[1] * p + self.coef[2]) * 2**(-r)
+        appro_exp_x_sum = torch.sum(appro_exp_x, dim=-1, keepdim=True)
+        y = appro_exp_x / appro_exp_x_sum
+        scaling_factor = 1 / 2**self.output_bit
+        return y, None
 
-        x_int_max, _ = x_int.max(dim=-1, keepdim=True)
-        x_int = x_int - x_int_max
-        exp_int, exp_scaling_factor = self.int_exp(x_int, scaling_factor)
 
-        # Avoid overflow
-        exp, exp_scaling_factor = self.act(exp_int, exp_scaling_factor)
-        exp_int = exp / exp_scaling_factor
-
-        exp_int_sum = exp_int.sum(dim=-1, keepdim=True)
-        factor = floor_ste.apply(2 ** self.max_bit / exp_int_sum)
-        exp_int = floor_ste.apply(exp_int * factor / 2 ** (self.max_bit - self.output_bit))
-        scaling_factor = 1 / 2 ** self.output_bit
-        return exp_int * scaling_factor, scaling_factor
 
 
 class IntLayerNorm(nn.Module):
@@ -798,9 +799,9 @@ def batch_frexp(inputs, max_bit=31):
     )
 
 def integer_multiply_shift_round(x, m, e, accuracy=23):
-    tmp = m * 2**accuracy * x
+    tmp = m * 2.0**accuracy * x
 
-    return torch.round(tmp * 2**(e - accuracy))
+    return torch.round(tmp * 2.0**(e - accuracy))
 
 class FixedPointMul(Function):
     """
