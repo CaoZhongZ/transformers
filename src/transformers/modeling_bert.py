@@ -1,4 +1,18 @@
 # coding=utf-8
+# Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 # Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
 # Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
 #
@@ -29,6 +43,9 @@ from .configuration_bert import BertConfig
 from .file_utils import add_start_docstrings, add_start_docstrings_to_callable
 from .modeling_utils import PreTrainedModel, prune_linear_layer
 
+from pytorch_quantization import nn as quant_nn
+from pytorch_quantization import calib as quant_calib
+from pytorch_quantization.nn.modules.tensor_quantizer import TensorQuantizer
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +156,6 @@ ACT2FN = {"gelu": gelu, "relu": torch.nn.functional.relu, "swish": swish, "gelu_
 
 BertLayerNorm = torch.nn.LayerNorm
 
-
 class BertEmbeddings(nn.Module):
     """Construct the embeddings from word, position and token_type embeddings.
     """
@@ -194,11 +210,16 @@ class BertSelfAttention(nn.Module):
         self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
-        self.query = nn.Linear(config.hidden_size, self.all_head_size)
-        self.key = nn.Linear(config.hidden_size, self.all_head_size)
-        self.value = nn.Linear(config.hidden_size, self.all_head_size)
+        self.query = quant_nn.QuantLinear(config.hidden_size, self.all_head_size)
+        self.key = quant_nn.QuantLinear(config.hidden_size, self.all_head_size)
+        self.value = quant_nn.QuantLinear(config.hidden_size, self.all_head_size)
 
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
+
+        self.qv_a_input_quantizer = TensorQuantizer(quant_nn.QuantLinear.default_quant_desc_input)
+        self.qv_b_input_quantizer = TensorQuantizer(quant_nn.QuantLinear.default_quant_desc_input)
+        self.av_a_input_quantizer = TensorQuantizer(quant_nn.QuantLinear.default_quant_desc_input)
+        self.av_b_input_quantizer = TensorQuantizer(quant_nn.QuantLinear.default_quant_desc_input)
 
     def transpose_for_scores(self, x):
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
@@ -231,7 +252,9 @@ class BertSelfAttention(nn.Module):
         value_layer = self.transpose_for_scores(mixed_value_layer)
 
         # Take the dot product between "query" and "key" to get the raw attention scores.
-        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+        attention_scores = torch.matmul(
+                self.qv_a_input_quantizer(query_layer),
+                self.qv_b_input_quantizer(key_layer.transpose(-1, -2)))
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
         if attention_mask is not None:
             # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
@@ -248,7 +271,9 @@ class BertSelfAttention(nn.Module):
         if head_mask is not None:
             attention_probs = attention_probs * head_mask
 
-        context_layer = torch.matmul(attention_probs, value_layer)
+        context_layer = torch.matmul(
+                self.av_a_input_quantizer(attention_probs),
+                self.av_b_input_quantizer(value_layer))
 
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
@@ -261,14 +286,24 @@ class BertSelfAttention(nn.Module):
 class BertSelfOutput(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.dense = nn.Linear(config.hidden_size, config.hidden_size)
+
+	# Quantize Linear layer
+        self.dense = quant_nn.QuantLinear(config.hidden_size, config.hidden_size)
         self.LayerNorm = BertLayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
+
+	# Quantize the inputs to the residual add
+        self.add_local_input_quantizer = TensorQuantizer(quant_nn.QuantLinear.default_quant_desc_input)
+        self.add_residual_input_quantizer = TensorQuantizer(quant_nn.QuantLinear.default_quant_desc_input)
 
     def forward(self, hidden_states, input_tensor):
         hidden_states = self.dense(hidden_states)
         hidden_states = self.dropout(hidden_states)
-        hidden_states = self.LayerNorm(hidden_states + input_tensor)
+
+	# Quantize the inputs to the residual add
+        add_local = self.add_local_input_quantizer(hidden_states)
+        add_residual = self.add_residual_input_quantizer(input_tensor)
+        hidden_states = self.LayerNorm(add_local + add_residual)
         return hidden_states
 
 
@@ -321,7 +356,7 @@ class BertAttention(nn.Module):
 class BertIntermediate(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.dense = nn.Linear(config.hidden_size, config.intermediate_size)
+        self.dense = quant_nn.QuantLinear(config.hidden_size, config.intermediate_size)
         if isinstance(config.hidden_act, str):
             self.intermediate_act_fn = ACT2FN[config.hidden_act]
         else:
@@ -336,14 +371,24 @@ class BertIntermediate(nn.Module):
 class BertOutput(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.dense = nn.Linear(config.intermediate_size, config.hidden_size)
+
+	# Quantize Linear layer
+        self.dense = quant_nn.QuantLinear(config.intermediate_size, config.hidden_size)
         self.LayerNorm = BertLayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
+
+	# Quantize the inputs to the residual add
+        self.add_local_input_quantizer = TensorQuantizer(quant_nn.QuantLinear.default_quant_desc_input)
+        self.add_residual_input_quantizer = TensorQuantizer(quant_nn.QuantLinear.default_quant_desc_input)
 
     def forward(self, hidden_states, input_tensor):
         hidden_states = self.dense(hidden_states)
         hidden_states = self.dropout(hidden_states)
-        hidden_states = self.LayerNorm(hidden_states + input_tensor)
+
+	# Quantize the inputs to the residual add
+        add_local = self.add_local_input_quantizer(hidden_states)
+        add_residual = self.add_residual_input_quantizer(input_tensor)
+        hidden_states = self.LayerNorm(add_local + add_residual)
         return hidden_states
 
 
@@ -388,6 +433,7 @@ class BertEncoder(nn.Module):
         self.output_attentions = config.output_attentions
         self.output_hidden_states = config.output_hidden_states
         self.layer = nn.ModuleList([BertLayer(config) for _ in range(config.num_hidden_layers)])
+        self.final_input_quantizer = TensorQuantizer(quant_nn.QuantLinear.default_quant_desc_input)
 
     def forward(
         self,
@@ -410,6 +456,8 @@ class BertEncoder(nn.Module):
 
             if self.output_attentions:
                 all_attentions = all_attentions + (layer_outputs[1],)
+
+        hidden_states = self.final_input_quantizer(hidden_states)
 
         # Add last layer
         if self.output_hidden_states:
