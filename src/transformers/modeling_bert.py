@@ -226,6 +226,23 @@ class BertSelfAttention(nn.Module):
         x = x.view(*new_x_shape)
         return x.permute(0, 2, 1, 3)
 
+    def fuse_qkv(self):
+        if self.query._weight_quantizer._if_quant:
+            del self.query._weight_quantizer._amax
+            del self.key._weight_quantizer._amax
+            del self.value._weight_quantizer._amax
+
+            # fuse qkv weight quantizer
+            q = self.query._weight_quantizer._get_amax().detach().item()
+            k = self.key._weight_quantizer._get_amax().detach().item()
+            v = self.value._weight_quantizer._get_amax().detach().item()
+
+            amax = max(q,k,v)
+
+            self.query._weight_quantizer.amax = amax
+            self.key._weight_quantizer.amax = amax
+            self.value._weight_quantizer.amax = amax
+
     def forward(
         self,
         hidden_states,
@@ -234,6 +251,9 @@ class BertSelfAttention(nn.Module):
         encoder_hidden_states=None,
         encoder_attention_mask=None,
     ):
+
+        self.fuse_qkv()
+
         mixed_query_layer = self.query(hidden_states)
 
         # If this is instantiated as a cross-attention module, the keys
